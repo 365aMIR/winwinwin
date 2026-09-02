@@ -1,0 +1,269 @@
+---
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <div class="desktop" id="desktop">
+      <slot />
+    </div>
+
+    <footer class="taskbar">
+      <div class="taskbar-apps" id="dock"></div>
+      <p class="taskbar-clock" id="clock"></p>
+    </footer>
+
+    <script is:inline>
+      (() => {
+        const desktop = document.getElementById('desktop');
+        const dock = document.getElementById('dock');
+        const KEY = 'libre-dash:desktop';
+
+        let saved = {};
+        try {
+          saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+        } catch {}
+        const save = () => localStorage.setItem(KEY, JSON.stringify(saved));
+
+        const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+        let topZ = 10;
+
+        const windows = [...document.querySelectorAll('.win')];
+
+        windows.forEach((win, i) => {
+          const id = win.dataset.winId;
+          const state = (saved[id] = saved[id] || {});
+          if (state.open === undefined) state.open = true;
+
+          // --- geometry -------------------------------------------------
+          // Keep windows reachable: a stored position from a wider screen must
+          // not strand one off the edge.
+          const place = (x, y) => {
+            const maxX = Math.max(0, desktop.clientWidth - win.offsetWidth);
+            const maxY = Math.max(0, desktop.clientHeight - win.offsetHeight);
+            state.x = clamp(x, 0, maxX);
+            state.y = clamp(y, 0, maxY);
+            win.style.left = state.x + 'px';
+            win.style.top = state.y + 'px';
+          };
+
+          const focus = () => {
+            windows.forEach((w) => delete w.dataset.focused);
+            win.dataset.focused = '';
+            win.style.zIndex = ++topZ;
+          };
+
+          const setOpen = (open) => {
+            state.open = open;
+            win.hidden = !open;
+            btn.dataset.active = String(open);
+            if (open) focus();
+            save();
+          };
+
+          // --- taskbar button -------------------------------------------
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'taskbar-app';
+          btn.textContent = win.dataset.winTitle;
+          // Closed windows stay pinned here, so nothing is ever lost for good.
+          btn.addEventListener('click', () => {
+            if (!state.open) return setOpen(true);
+            if (win.dataset.focused === undefined) return focus();
+            setOpen(false);
+          });
+          dock.appendChild(btn);
+
+          // --- restore ---------------------------------------------------
+          if (state.w) win.style.width = Math.min(state.w, desktop.clientWidth) + 'px';
+          if (state.h) win.style.height = Math.min(state.h, desktop.clientHeight) + 'px';
+          win.hidden = !state.open;
+          btn.dataset.active = String(state.open);
+
+          // Measuring needs the window laid out, so place after unhiding.
+          const startX = state.x ?? Number(win.dataset.x ?? NaN);
+          const startY = state.y ?? Number(win.dataset.y ?? NaN);
+          const wasHidden = win.hidden;
+          if (wasHidden) win.hidden = false;
+          place(
+            Number.isFinite(startX) ? startX : (desktop.clientWidth - win.offsetWidth) / 2 + i * 24,
+            Number.isFinite(startY) ? startY : (desktop.clientHeight - win.offsetHeight) / 2 + i * 24
+          );
+          if (wasHidden) win.hidden = true;
+          win.style.zIndex = ++topZ;
+
+          // --- drag & resize ---------------------------------------------
+          const bar = win.querySelector('.win-bar');
+          const grip = win.querySelector('.win-grip');
+
+          const drag = (e, onMove) => {
+            const target = e.currentTarget;
+            target.setPointerCapture(e.pointerId);
+            win.dataset.dragging = '';
+            const move = (ev) => onMove(ev);
+            const up = () => {
+              delete win.dataset.dragging;
+              target.removeEventListener('pointermove', move);
+              target.removeEventListener('pointerup', up);
+              target.removeEventListener('pointercancel', up);
+              save();
+            };
+            target.addEventListener('pointermove', move);
+            target.addEventListener('pointerup', up);
+            target.addEventListener('pointercancel', up);
+          };
+
+          bar.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0 || e.target.closest('.win-bar-btn')) return;
+            focus();
+            const rect = win.getBoundingClientRect();
+            const offX = e.clientX - rect.left;
+            const offY = e.clientY - rect.top;
+            const box = desktop.getBoundingClientRect();
+            drag(e, (ev) => place(ev.clientX - box.left - offX, ev.clientY - box.top - offY));
+          });
+
+          grip.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            focus();
+            const rect = win.getBoundingClientRect();
+            drag(e, (ev) => {
+              // Clamped to the desktop as well as to the minimum, so a stored
+              // size can never be one the grip cannot be reached to undo.
+              state.w = clamp(ev.clientX - rect.left, 260, desktop.clientWidth);
+              state.h = clamp(ev.clientY - rect.top, 160, desktop.clientHeight);
+              win.style.width = state.w + 'px';
+              win.style.height = state.h + 'px';
+            });
+          });
+
+          win.addEventListener('pointerdown', focus);
+          win.querySelectorAll('[data-win-action]').forEach((el) => {
+            const action = el.dataset.winAction;
+            if (action === 'close' || action === 'minimise') {
+              el.addEventListener('click', () => setOpen(false));
+            }
+          });
+        });
+
+        save();
+        // A resized viewport can strand windows; pull them back into view.
+        addEventListener('resize', () => {
+          windows.forEach((win) => {
+            const s = saved[win.dataset.winId];
+            if (!s || !s.open) return;
+            // A rotation to portrait shrinks the desktop under the window; give
+            // back the stored size only as far as the new viewport allows.
+            if (s.w) win.style.width = Math.min(s.w, desktop.clientWidth) + 'px';
+            if (s.h) win.style.height = Math.min(s.h, desktop.clientHeight) + 'px';
+            win.style.left = clamp(s.x, 0, Math.max(0, desktop.clientWidth - win.offsetWidth)) + 'px';
+            win.style.top = clamp(s.y, 0, Math.max(0, desktop.clientHeight - win.offsetHeight)) + 'px';
+          });
+        });
+
+        const clock = document.getElementById('clock');
+        const tickClock = () => {
+          clock.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        };
+        tickClock();
+        setInterval(tickClock, 15_000);
+      })();
+    </script>
+
+    <style is:global>
+      @import url("https://fonts.googleapis.com/css2?family=Taviraj:ital,wght@0,300;0,400;0,600;1,400&display=swap");
+      @import url("https://fonts.googleapis.com/css2?family=Tiny5&display=swap");
+      @import url("https://fonts.googleapis.com/css2?family=Ojuju:wght@200..800&display=swap");
+      @import url("https://fonts.googleapis.com/css2?family=Geostar+Fill&display=swap");
+
+      * { box-sizing: border-box; }
+
+      html,
+      body {
+        overflow: hidden;
+        height: 100%;
+      }
+
+      /* The transparency checkerboard, in the house greys. 24px squares, so the
+         tile is 48px. */
+      body {
+        font-family: "Taviraj", serif;
+        margin: 0;
+        padding: 0;
+        background-color: #FFFEFF;
+        background-image: conic-gradient(
+          #f8b5e7 0 25%,
+          #FFFEFF 0 50%,
+          #f8b5e7 0 75%,
+          #FFFEFF 0
+        );
+        background-size: 48px 48px;
+        color: #000300;
+      }
+
+      /* Everything above the taskbar is window territory. */
+      .desktop {
+        position: relative;
+        height: calc(100dvh - 40px);
+        overflow: hidden;
+      }
+
+      .taskbar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        -moz-column-gap: 12px;
+             column-gap: 12px;
+        padding: 0 10px;
+        background-color: #BFBEBF;
+        border-top: 2px solid #000300;
+        z-index: 1000;
+      }
+      .taskbar-apps {
+        display: flex;
+        -moz-column-gap: 8px;
+             column-gap: 8px;
+        overflow-x: auto;
+      }
+      .taskbar-app {
+        font-family: "Tiny5", sans-serif;
+        font-size: 16px;
+        background-color: #BDBDBD;
+        border: 2px solid #000300;
+        border-bottom-width: 4px;
+        border-top: none;
+        color: #000300;
+        padding: 3px 10px;
+        cursor: crosshair;
+        white-space: nowrap;
+      }
+      .taskbar-app:hover { background-color: #00FF2F; }
+      /* Pressed-in, like the sizer buttons: this one is on screen. */
+      .taskbar-app[data-active='true'] {
+        background-color: #000300;
+        color: #FFFEFF;
+      }
+      .taskbar-clock {
+        font-family: "Tiny5", sans-serif;
+        font-size: 16px;
+        margin: 0;
+        flex: none;
+      }
+    </style>
+  </body>
+</html>

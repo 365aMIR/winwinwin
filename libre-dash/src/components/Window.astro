@@ -1,0 +1,136 @@
+---
+interface Props {
+  /** Stable key — window position and open/closed state persist under it. */
+  id: string;
+  title: string;
+  /** Starting position. Omit to let the manager centre and cascade it. */
+  x?: number;
+  y?: number;
+  width?: number;
+}
+
+const { id, title, x, y, width = 380 } = Astro.props;
+---
+
+<section
+  class="win"
+  data-win-id={id}
+  data-win-title={title}
+  data-x={x}
+  data-y={y}
+  style={`width:${width}px`}
+>
+  <header class="win-bar">
+    <p class="win-bar-title">{title}</p>
+    <div class="win-bar-btns">
+      <button type="button" class="win-bar-btn" data-win-action="minimise" aria-label="Minimise">_</button>
+      <button type="button" class="win-bar-btn win-bar-btn--close" data-win-action="close" aria-label="Close">x</button>
+    </div>
+  </header>
+
+  <div class="win-body">
+    <slot />
+  </div>
+
+  <div class="win-grip" data-win-action="resize" aria-hidden="true"></div>
+</section>
+
+<style>
+  /* Positioned by the manager. Deliberately visible without it: if the script
+     fails, the reading still renders rather than leaving a blank desktop. */
+  .win {
+    position: absolute;
+    top: 0;
+    left: 0;
+    min-width: 260px;
+    /* Never wider or taller than the desktop: a window that overflows takes
+       its resize grip off screen with it, and on a phone there is no way to
+       reach round and pull it back. */
+    max-width: 100%;
+    max-height: 100%;
+    background-color: #D9D9D9;
+    border-bottom: 6px solid #000300;
+    border-right: 2px solid #000300;
+    border-left: 2px solid #000300;
+    border-top: 2px solid #000300;
+    color: #000300;
+    display: flex;
+    flex-direction: column;
+  }
+  .win[hidden] { display: none; }
+
+  .win-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    -moz-column-gap: 8px;
+         column-gap: 8px;
+    background-color: #F80000;
+    border-bottom: 2px solid #000300;
+    padding: 2px 4px 2px 10px;
+    cursor: grab;
+    /* Pointer events only reach the drag handler if the browser is not busy
+       scrolling with them. */
+    touch-action: none;
+    -webkit-user-select: none;
+       -moz-user-select: none;
+            user-select: none;
+  }
+  .win[data-dragging] .win-bar { cursor: grabbing; }
+  .win[data-focused] .win-bar { background-color: #F80000; }
+  .win:not([data-focused]) .win-bar { background-color: #797676; }
+
+  .win-bar-title {
+    font-family: "Taviraj", serif;
+    font-size: 20px;
+    line-height: 1.2;
+    margin: 0;
+    color: #FFFEFF;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .win-bar-btns {
+    display: flex;
+    -moz-column-gap: 4px;
+         column-gap: 4px;
+    flex: none;
+  }
+  .win-bar-btn {
+    font-family: "Tiny5", sans-serif;
+    font-size: 16px;
+    line-height: 1;
+    background-color: #BDBDBD;
+    border: 2px solid #000300;
+    border-bottom-width: 4px;
+    color: #000300;
+    padding: 2px 7px;
+    cursor: crosshair;
+  }
+  .win-bar-btn:hover { background-color: #00FF2F; }
+  .win-bar-btn--close:hover { background-color: #000300; color: #F80000; }
+
+  .win-body {
+    padding: 16px;
+    overflow: auto;
+    flex: 1;
+  }
+
+  /* Resize handle: two hatch marks in the corner, in the house black. */
+  .win-grip {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    touch-action: none;
+    background-image: linear-gradient(
+      135deg,
+      transparent 0 45%, #000300 45% 55%,
+      transparent 55% 70%, #000300 70% 80%,
+      transparent 80%
+    );
+  }
+</style>

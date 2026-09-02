@@ -1,0 +1,195 @@
+---
+interface Props {
+  title: string;
+  tempo: number;
+  mp3Url: string;
+  isFirst: boolean;
+  index: number;
+}
+
+const { title, tempo, mp3Url, isFirst, index } = Astro.props;
+---
+
+<div class="radio-card" data-index={index}>
+  <div class="radio-card-tophalf">
+    <img
+      src="/img/loudspeaker_rays-1.png"
+      width="32"
+      height="32"
+      alt="volume"
+      class="radio-card-tophalf-volume"
+      style={isFirst ? '' : 'display: none'}
+    />
+
+    <div class="radio-card-tophalf-status" style={isFirst ? '' : 'visibility: hidden'}>
+      playing now
+    </div>
+    <div class="radio-card-tophalf-queue" style={isFirst ? 'display: none' : ''}>
+      looking for file...
+    </div>
+
+    <audio class="audio-element" src={mp3Url} preload="none" data-index={index}></audio>
+    <div class="progress-container">
+      <div class="progress-bar"></div>
+    </div>
+  </div>
+
+  <div class="radio-card-bottomhalf">
+    <div class="radio-card-bottomhalf-disc" style={isFirst ? '' : 'display: none'}>
+      <img src="/img/cd_audio_cd-0.png" width="56" height="56" alt="cd" />
+    </div>
+    <div class="radio-card-bottomhalf-info">
+      <p class="radio-card-bottomhalf-info-col">
+        <span>{title}</span>
+        <span class="label">title</span>
+      </p>
+      <p class="radio-card-bottomhalf-info-col radio-card-bottomhalf-info-col--right">
+        <span>{tempo}</span>
+        <span class="label">tempo</span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* The astroland card, squared off to sit inside a window frame: blue body,
+     white type, green divider under the top half. */
+  .radio-card {
+    position: relative;
+    flex: 0 0 230px;
+    min-width: 230px;
+    background-color: #02A9EA;
+    color: #FFFEFF;
+    border: 2px solid #000300;
+    border-bottom-width: 6px;
+  }
+
+  .radio-card-tophalf {
+    position: relative;
+    height: 132px;
+    padding: 10px 8px;
+  }
+
+  .radio-card-tophalf-volume {
+    float: right;
+    width: 32px;
+    height: 32px;
+  }
+
+  .radio-card-tophalf-status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Ojuju", sans-serif;
+    font-size: 30px;
+    font-weight: 800;
+    text-transform: lowercase;
+    transform: translateY(-5%);
+  }
+  /* The little shortcut arrow that sits under the status line in astroland. */
+  .radio-card-tophalf-status::after {
+    content: '';
+    position: absolute;
+    width: 80%;
+    height: 40px;
+    margin-top: 46px;
+    background-image: url(/img/shortcut.png);
+    background-size: contain;
+    background-repeat: no-repeat;
+  }
+
+  .radio-card-tophalf-queue {
+    position: absolute;
+    inset: 0;
+    transform: translateY(30%);
+    font-family: "Tiny5", sans-serif;
+    font-size: 18px;
+    text-align: center;
+    color: #FFFEFF;
+    animation: pulse 2s infinite;
+  }
+
+  .audio-element { display: none; }
+
+  .progress-container {
+    position: absolute;
+    left: 2.5%;
+    right: 2.5%;
+    bottom: -8px;
+    height: 5px;
+    background: #00FF2F;
+    overflow: hidden;
+    z-index: 5;
+  }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: #FAFF00;
+    transition: width 0.1s;
+  }
+
+  .radio-card-bottomhalf {
+    position: relative;
+    border-top: 10px solid #00FF2F;
+    padding: 10px 8px 8px;
+  }
+
+  /* Green disc with the CD on top, straddling the divider — only the playing
+     card wears it. */
+  .radio-card-bottomhalf-disc {
+    position: absolute;
+    left: 8px;
+    top: -32px;
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    background-color: #00FF2F;
+    z-index: 10;
+  }
+  .radio-card-bottomhalf-disc img {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    right: -5px;
+  }
+
+  .radio-card-bottomhalf-info {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    -moz-column-gap: 10px;
+         column-gap: 10px;
+    margin-top: 30px;
+  }
+  .radio-card-bottomhalf-info-col {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    min-width: 0;
+  }
+  .radio-card-bottomhalf-info-col--right {
+    text-align: right;
+    flex: none;
+  }
+  .radio-card-bottomhalf-info-col span {
+    font-family: "Tiny5", sans-serif;
+    font-size: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .radio-card-bottomhalf-info-col .label {
+    font-family: "Taviraj", serif;
+    font-size: 15px;
+    font-weight: 400;
+  }
+
+  @keyframes pulse {
+    0% { opacity: 0.7; }
+    50% { opacity: 1; }
+    100% { opacity: 0.7; }
+  }
+</style>

@@ -1,0 +1,235 @@
+---
+import Desktop from '../layouts/Desktop.astro';
+import Window from '../components/Window.astro';
+import Radio from '../components/Radio.astro';
+import { getSnapshot, type Snapshot } from '../lib/libre';
+import { getBeats } from '../lib/beats';
+
+export const prerender = false;
+
+let data: Snapshot | null = null;
+let error: string | null = null;
+try {
+  data = await getSnapshot();
+} catch (err) {
+  error = (err as Error).message;
+}
+
+const decimals = data?.units === 'mmol/L' ? 1 : 0;
+const radioCards = getBeats();
+---
+
+<Desktop title={data ? `amir: ${data.current.value.toFixed(decimals)} ${data.units}` : 'LibreLinkUp'}>
+  <Window id="glucose" title="glucose" width={380}>
+    {error ? (
+      <section class="glucose glucose--error">
+        <h1 class="glucose-error-title">Can't reach LibreLinkUp</h1>
+        <p class="glucose-error-body">{error}</p>
+      </section>
+    ) : (
+      <section class="glucose" data-state="ok">
+        <p class="glucose-who">amir dessouky</p>
+
+        <div class="glucose-read">
+          <p class="glucose-read-value" id="value">{data!.current.value.toFixed(decimals)}</p>
+          <p class="glucose-read-units">{data!.units}</p>
+        </div>
+
+        <div class="glucose-meta">
+          <p class="glucose-meta-trend" id="trend">{data!.current.trend}</p>
+          <p class="glucose-meta-ago"><time id="ts" datetime={data!.current.timestamp}>just now</time></p>
+        </div>
+
+        <div class="glucose-graph">
+          <svg id="chart" viewBox="0 0 320 100" preserveAspectRatio="none" aria-label="Recent readings"></svg>
+        </div>
+
+        <p class="glucose-range">
+          target {data!.target.low.toFixed(decimals)}–{data!.target.high.toFixed(decimals)} {data!.units}
+        </p>
+      </section>
+    )}
+  </Window>
+
+  <Window id="radio" title="radio" width={420}>
+    <Radio radioCards={radioCards} />
+  </Window>
+
+  <script is:inline define:vars={{ initial: data }}>
+    if (initial) {
+      const card = document.querySelector('.glucose');
+      const decimals = initial.units === 'mmol/L' ? 1 : 0;
+
+      const paint = (snap) => {
+        const c = snap.current;
+        document.getElementById('value').textContent = c.value.toFixed(decimals);
+        document.getElementById('trend').textContent = c.trend;
+        const ts = document.getElementById('ts');
+        ts.dateTime = c.timestamp;
+        card.dataset.state = c.isLow ? 'low' : c.isHigh ? 'high' : 'ok';
+        drawChart(snap);
+        tick();
+      };
+
+      const drawChart = (snap) => {
+        const pts = snap.history.concat([snap.current]);
+        if (pts.length < 2) return;
+        const vals = pts.map((p) => p.value);
+        const lo = Math.min(...vals, snap.target.low) * 0.9;
+        const hi = Math.max(...vals, snap.target.high) * 1.1;
+        const x = (i) => (i / (pts.length - 1)) * 320;
+        const y = (v) => 100 - ((v - lo) / (hi - lo)) * 100;
+        const d = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+        const band = { y: y(snap.target.high), h: y(snap.target.low) - y(snap.target.high) };
+        // Injected markup carries no scope attribute, so the band is coloured
+        // here rather than from the stylesheet.
+        document.getElementById('chart').innerHTML =
+          `<rect x="0" y="${band.y.toFixed(1)}" width="320" height="${band.h.toFixed(1)}" fill="#ffad0030"/>` +
+          `<path d="${d}" fill="none" stroke="currentColor" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+      };
+
+      // Relative "x min ago", refreshed every 10s.
+      const tick = () => {
+        const ts = document.getElementById('ts');
+        const mins = Math.round((Date.now() - new Date(ts.dateTime)) / 60000);
+        ts.textContent = mins < 1 ? 'just now' : mins === 1 ? '1 min ago' : `${mins} min ago`;
+      };
+
+      const refresh = async () => {
+        try {
+          const res = await fetch('/api/glucose');
+          if (res.ok) paint(await res.json());
+        } catch {}
+      };
+
+      paint(initial);
+      setInterval(tick, 10_000);
+      // Libre pushes a new reading each minute; poll a little slower than that.
+      setInterval(refresh, 60_000);
+      document.addEventListener('visibilitychange', () => !document.hidden && refresh());
+    }
+  </script>
+</Desktop>
+
+<style>
+  /* The window frame supplies the border and the sizing now; this is just the
+     readout inside it. */
+  .glucose {
+    color: #000300;
+  }
+
+  .glucose-who {
+    font-family: "Geostar Fill", sans-serif;
+    font-size: 28px;
+    text-transform: lowercase;
+    color: #000300;
+    margin: 0 0 4px;
+    width: 100%;
+  }
+
+  .glucose-read {
+    display: flex;
+    align-items: baseline;
+    -moz-column-gap: 8px;
+         column-gap: 8px;
+  }
+  .glucose-read-value {
+    font-family: "Geostar Fill", sans-serif;
+    font-size: 72px;
+    font-weight: 600;
+    -webkit-text-stroke: 0.2px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+    color: currentColor;
+  }
+  .glucose-read-units {
+    font-family: "Tiny5", sans-serif;
+    font-size: 18px;
+    margin: 0;
+    color: #000300;
+  }
+
+  .glucose-meta {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    -moz-column-gap: 8px;
+         column-gap: 8px;
+    margin-top: 26px;
+  }
+  /* Reads as one of the sizer buttons, minus the affordance — it is a
+     readout, so no pointer, no hover. */
+  .glucose-meta-trend {
+    font-family: "Tiny5", sans-serif;
+    font-size: 18px;
+    background-color: #BDBDBD;
+    border-bottom: 6px solid #000300;
+    border-right: 2px solid #000300;
+    border-left: 2px solid #000300;
+    border-top: none;
+    color: #000300;
+    padding: 0 6px;
+    margin: 0;
+    cursor: default;
+  }
+  .glucose-meta-ago {
+    font-family: "Taviraj", serif;
+    font-size: 14px;
+    font-style: italic;
+    margin: 0;
+  }
+
+  .glucose-graph {
+    margin-top: 22px;
+    background-color: #FFFEFF;
+    border: 2px solid #000300;
+    padding: 6px;
+  }
+  #chart {
+    display: block;
+    width: 100%;
+    height: 88px;
+    overflow: visible;
+  }
+
+  .glucose-range {
+    font-family: "Tiny5", sans-serif;
+    font-size: 14px;
+    text-transform: lowercase;
+    margin: 10px 0 0;
+    color: #000300;
+  }
+
+  /* In range reads calm and black; out of range takes the red, with a low
+     inverted so it cannot be mistaken for a high at a glance. */
+  .glucose[data-state='ok'] { color: #000300; }
+  .glucose[data-state='ok'] .glucose-meta-trend {
+    background-color: #00FF2F;
+  }
+  .glucose[data-state='high'] { color: #F80000; }
+  .glucose[data-state='high'] .glucose-meta-trend {
+    background-color: #F80000;
+    color: #FFFEFF;
+  }
+  .glucose[data-state='low'] { color: #F80000; }
+  .glucose[data-state='low'] .glucose-meta-trend {
+    background-color: #000300;
+    color: #F80000;
+  }
+
+  .glucose--error { color: #000300; }
+  .glucose-error-title {
+    font-family: "Ojuju", sans-serif;
+    font-size: 28px;
+    margin: 0 0 8px;
+    line-height: 1.1;
+  }
+  .glucose-error-body {
+    font-family: "Taviraj", serif;
+    font-size: 15px;
+    margin: 0;
+    word-break: break-word;
+  }
+</style>

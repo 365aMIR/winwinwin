@@ -1,0 +1,369 @@
+---
+import RadioCard from './RadioCard.astro';
+import type { Beat } from '../lib/beats';
+
+interface Props {
+  radioCards: Beat[];
+}
+
+const { radioCards } = Astro.props;
+---
+
+<section class="radio">
+  <div class="radio-head">
+    <h1 class="radio-head-title">RADIO</h1>
+    <button type="button" class="radio-head-toggle" id="radio-toggle" aria-pressed="false">
+      play
+    </button>
+  </div>
+
+  {radioCards.length === 0 ? (
+    <p class="radio-empty">no beats in /public/beats</p>
+  ) : (
+    <>
+      <div class="radio-deck">
+        {radioCards.map((card, index) => (
+          <RadioCard
+            title={card.title}
+            tempo={card.tempo}
+            mp3Url={card.mp3Url}
+            isFirst={index === 0}
+            index={index}
+          />
+        ))}
+      </div>
+
+      <nav class="radio-queue" aria-label="radio queue">
+        <h2 class="radio-queue-head">now playing</h2>
+        <ul class="radio-queue-list" id="queue-now">
+          {radioCards.slice(0, 1).map((card, index) => (
+            <li class="radio-queue-item is-playing" data-index={index}>
+              <button type="button" data-skip-to={index}>{card.file}</button>
+            </li>
+          ))}
+        </ul>
+
+        <h2 class="radio-queue-head">up next</h2>
+        <ul class="radio-queue-list" id="queue-next">
+          {radioCards.slice(1).map((card, i) => (
+            <li class="radio-queue-item" data-index={i + 1}>
+              <button type="button" data-skip-to={i + 1}>{card.file}</button>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </>
+  )}
+</section>
+
+<script>
+  // The running order lives in the DOM: the first .radio-card is whatever is
+  // playing, and finishing a track moves that card to the back of the deck.
+  let queueStatusInterval: ReturnType<typeof setInterval>;
+  let countdownInterval: ReturnType<typeof setInterval>;
+
+  const queueMessages = [
+    'looking for file...',
+    'cant locate sample!',
+    'found sample',
+    'waiting for song to end...',
+  ];
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const deck = document.querySelector<HTMLElement>('.radio-deck');
+    const toggle = document.getElementById('radio-toggle') as HTMLButtonElement | null;
+    if (!deck || !toggle) return;
+
+    const cards = () => Array.from(deck.querySelectorAll<HTMLElement>('.radio-card'));
+    const audios = () => Array.from(deck.querySelectorAll<HTMLAudioElement>('.audio-element'));
+
+    if (cards().length === 0) return;
+
+    startQueueStatusCycle();
+
+    audios().forEach((audio) => {
+      const progressBar = audio.parentElement?.querySelector<HTMLElement>('.progress-bar');
+
+      audio.addEventListener('timeupdate', () => {
+        if (progressBar) {
+          const progress = (audio.currentTime / audio.duration) * 100 || 0;
+          progressBar.style.width = `${progress}%`;
+        }
+
+        // Three seconds out, the next card starts counting down.
+        if (audio === audios()[0] && audio.duration && audio.duration - audio.currentTime <= 3) {
+          startCountdown(audio.duration - audio.currentTime);
+        }
+      });
+
+      audio.addEventListener('ended', playNextTrack);
+      audio.addEventListener('play', () => setToggleState(true));
+      audio.addEventListener('pause', () => setToggleState(false));
+    });
+
+    function setToggleState(playing: boolean) {
+      if (!toggle) return;
+      toggle.textContent = playing ? 'pause' : 'play';
+      toggle.setAttribute('aria-pressed', String(playing));
+    }
+
+    // Autoplay is deliberately not attempted — a dashboard that starts making
+    // noise on load is a nuisance, and browsers block it anyway.
+    toggle.addEventListener('click', () => {
+      const audio = audios()[0];
+      if (!audio) return;
+      if (audio.paused) {
+        audio.play().catch((error: unknown) => console.error('Error starting playback:', error));
+      } else {
+        audio.pause();
+      }
+    });
+
+    // Cycle the chatter on the cards that are not playing.
+    function startQueueStatusCycle() {
+      clearInterval(queueStatusInterval);
+      queueStatusInterval = setInterval(() => {
+        cards().forEach((card, i) => {
+          if (i === 0) return;
+          const queueElement = card.querySelector<HTMLElement>('.radio-card-tophalf-queue');
+          if (queueElement && queueElement.style.display !== 'none') {
+            queueElement.textContent =
+              queueMessages[Math.floor(Math.random() * queueMessages.length)];
+          }
+        });
+      }, 4000);
+    }
+
+    function startCountdown(secondsRemaining: number) {
+      clearInterval(countdownInterval);
+
+      const nextCard = cards()[1];
+      if (!nextCard) return;
+
+      const queueElement = nextCard.querySelector<HTMLElement>('.radio-card-tophalf-queue');
+      if (!queueElement) return;
+
+      queueElement.style.display = 'block';
+
+      countdownInterval = setInterval(() => {
+        const countdown = Math.ceil(secondsRemaining);
+        if (countdown <= 3 && countdown > 0) queueElement.textContent = `${countdown}...`;
+        secondsRemaining -= 1;
+        if (secondsRemaining <= 0) clearInterval(countdownInterval);
+      }, 1000);
+    }
+
+    function playNextTrack() {
+      const finished = audios()[0];
+      finished.pause();
+      finished.currentTime = 0;
+
+      const first = cards()[0];
+      if (!first || !deck) return;
+      deck.appendChild(first);
+
+      updatePlayerStatus();
+
+      audios()[0]
+        .play()
+        .catch((error: unknown) => console.error('Error playing next track:', error));
+    }
+
+    // Repaint the deck after a reorder: only the front card gets the speaker,
+    // the status line and the disc.
+    function updatePlayerStatus() {
+      cards().forEach((card, i) => {
+        const statusElement = card.querySelector<HTMLElement>('.radio-card-tophalf-status');
+        const queueElement = card.querySelector<HTMLElement>('.radio-card-tophalf-queue');
+        const volumeIcon = card.querySelector<HTMLElement>('.radio-card-tophalf-volume');
+        const disc = card.querySelector<HTMLElement>('.radio-card-bottomhalf-disc');
+
+        if (statusElement) statusElement.style.visibility = i === 0 ? 'visible' : 'hidden';
+        if (queueElement) queueElement.style.display = i === 0 ? 'none' : 'block';
+        if (volumeIcon) volumeIcon.style.display = i === 0 ? 'block' : 'none';
+        if (disc) disc.style.display = i === 0 ? 'block' : 'none';
+      });
+
+      if (deck) deck.scrollLeft = 0;
+      syncQueue();
+    }
+
+    // Jump straight to a track: rotate cards to the back until the requested
+    // one is in front — the same move playNextTrack() makes, just repeated.
+    function skipTo(targetIndex: number) {
+      if (!deck) return;
+      const target = String(targetIndex);
+      let deckCards = cards();
+
+      // Bounded by the card count, so an unknown index is a no-op rather than
+      // an endless spin: a full cycle leaves the deck exactly as it was.
+      for (let i = 0; i < deckCards.length && deckCards[0].dataset.index !== target; i++) {
+        deck.appendChild(deckCards[0]);
+        deckCards = cards();
+      }
+      if (deckCards[0].dataset.index !== target) return;
+
+      audios().forEach((audio) => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
+
+      clearInterval(countdownInterval);
+      updatePlayerStatus();
+
+      audios()[0]
+        .play()
+        .catch((error: unknown) => console.error('Error skipping to track:', error));
+    }
+
+    /* ---------- Queue list ---------- */
+    const nowList = document.getElementById('queue-now');
+    const nextList = document.getElementById('queue-next');
+
+    // Every <li> keyed by the track's original index, which never changes even
+    // as the deck shuffles.
+    const items = new Map<string, HTMLElement>();
+    document.querySelectorAll<HTMLElement>('.radio-queue-item').forEach((item) => {
+      if (item.dataset.index) items.set(item.dataset.index, item);
+    });
+
+    function syncQueue() {
+      if (!nowList || !nextList) return;
+      cards().forEach((card, i) => {
+        const item = card.dataset.index ? items.get(card.dataset.index) : undefined;
+        if (!item) return;
+        // appendChild moves the node, so iterating in card order rebuilds each
+        // list in order.
+        (i === 0 ? nowList : nextList).appendChild(item);
+        item.classList.toggle('is-playing', i === 0);
+      });
+    }
+
+    document.querySelectorAll<HTMLButtonElement>('[data-skip-to]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const index = btn.dataset.skipTo;
+        if (index !== undefined) skipTo(Number(index));
+      });
+    });
+  });
+</script>
+
+<style>
+  .radio { color: #000300; }
+
+  .radio-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    -moz-column-gap: 10px;
+         column-gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  /* astroland's BIGfuckofftext, sized for a window: Ojuju at full weight with
+     the stream-player glyph riding above it. */
+  .radio-head-title {
+    position: relative;
+    font-family: "Ojuju", sans-serif;
+    font-optical-sizing: auto;
+    font-weight: 800;
+    font-size: 56px;
+    line-height: 1;
+    margin: 0;
+  }
+  .radio-head-title::before {
+    content: url(/img/media_player_stream_no.png);
+    position: absolute;
+    top: -30px;
+    left: 4px;
+  }
+
+  /* Same affordance as the window's sizer buttons. */
+  .radio-head-toggle {
+    font-family: "Tiny5", sans-serif;
+    font-size: 16px;
+    line-height: 1;
+    background-color: #BDBDBD;
+    border: 2px solid #000300;
+    border-bottom-width: 4px;
+    color: #000300;
+    padding: 4px 10px;
+    cursor: crosshair;
+    flex: none;
+  }
+  .radio-head-toggle:hover { background-color: #00FF2F; }
+  .radio-head-toggle[aria-pressed='true'] {
+    background-color: #000300;
+    color: #FFFEFF;
+  }
+
+  /* The deck scrolls sideways: cards keep their astroland proportions however
+     narrow the window gets. */
+  .radio-deck {
+    display: flex;
+    -moz-column-gap: 16px;
+         column-gap: 16px;
+    padding-top: 4px;
+    padding-bottom: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .radio-queue {
+    margin-top: 16px;
+    padding: 10px 12px 12px;
+    background-color: #FFFEFF;
+    border: 2px solid #000300;
+    /* The radio mark, sitting in behind the queue. */
+    background-image: url(/img/su00kiradi0.png);
+    background-repeat: no-repeat;
+    background-position: right -20px bottom -10px;
+    background-size: 200px auto;
+  }
+  .radio-queue-head {
+    font-family: "Ojuju", sans-serif;
+    font-size: 20px;
+    font-weight: 800;
+    text-transform: lowercase;
+    margin: 0 0 4px;
+  }
+  .radio-queue-head + .radio-queue-list { margin-bottom: 12px; }
+  .radio-queue-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* One track in the queue; clicking it skips the radio straight there. */
+  .radio-queue-item button {
+    display: block;
+    width: 100%;
+    padding: 2px 0;
+    border: none;
+    background: none;
+    color: #797676;
+    font-family: "Tiny5", sans-serif;
+    font-size: 18px;
+    text-align: left;
+    cursor: crosshair;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .radio-queue-item button::before {
+    content: "* ";
+    vertical-align: middle;
+  }
+  .radio-queue-item button:hover {
+    color: #000300;
+    text-decoration: underline;
+  }
+  .radio-queue-item.is-playing button { color: #000300; }
+  .radio-queue-item.is-playing button::before { color: #F80000; }
+
+  .radio-empty {
+    font-family: "Tiny5", sans-serif;
+    font-size: 16px;
+    margin: 0;
+  }
+</style>
