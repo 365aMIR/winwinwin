@@ -12,14 +12,36 @@ export interface Beat {
 let cache: Beat[] | null = null;
 
 /**
- * Reads public/beats and pulls title + tempo out of the filenames, which look
- * like "GLORIFIED _ @su00ki 140.mp3": everything before the @ is the title,
- * the trailing number is the tempo.
+ * Where the mp3s live depends on how we are running: `astro dev` and
+ * `astro preview` serve them straight out of public/, but a built server has
+ * had public/ folded into the client output and public/ itself is not shipped.
+ */
+const BEAT_DIRS = [
+  path.join(process.cwd(), "dist", "client", "beats"),
+  path.join(process.cwd(), "client", "beats"),
+  path.join(process.cwd(), "public", "beats"),
+];
+
+function findBeatsDir(): string | null {
+  for (const dir of BEAT_DIRS) {
+    if (fs.existsSync(dir)) return dir;
+  }
+  return null;
+}
+
+/**
+ * Reads the beats directory and pulls title + tempo out of the filenames,
+ * which look like "GLORIFIED _ @su00ki 140.mp3": everything before the @ is
+ * the title, the trailing number is the tempo.
  */
 export function getBeats(): Beat[] {
   if (cache) return cache;
 
-  const beatsDir = path.join(process.cwd(), "public", "beats");
+  const beatsDir = findBeatsDir();
+  if (!beatsDir) {
+    console.error(`No beats directory found; looked in: ${BEAT_DIRS.join(", ")}`);
+    return [];
+  }
 
   try {
     cache = fs
@@ -45,7 +67,7 @@ export function getBeats(): Beat[] {
       });
     return cache;
   } catch (error) {
-    console.error("Error reading beats directory:", error);
+    console.error(`Error reading beats directory ${beatsDir}:`, error);
     return [];
   }
 }
