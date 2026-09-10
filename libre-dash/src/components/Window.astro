@@ -7,9 +7,21 @@ interface Props {
   x?: number;
   y?: number;
   width?: number;
+  /**
+   * Whether it starts on screen. `true` is a first-visit default that the
+   * user's last choice then overrides; `false` is enforced on every load, so a
+   * window opened on demand always arrives closed.
+   */
+  open?: boolean;
+  /**
+   * Whether it gets a button in the taskbar. Turn it off for windows that are
+   * opened from something else on the page — that control becomes the only way
+   * back, so make sure one exists.
+   */
+  dock?: boolean;
 }
 
-const { id, title, x, y, width = 380 } = Astro.props;
+const { id, title, x, y, width = 380, open = true, dock = true } = Astro.props;
 ---
 
 <section
@@ -18,6 +30,8 @@ const { id, title, x, y, width = 380 } = Astro.props;
   data-win-title={title}
   data-x={x}
   data-y={y}
+  data-open={String(open)}
+  data-dock={String(dock)}
   style={`width:${width}px`}
 >
   <header class="win-bar">

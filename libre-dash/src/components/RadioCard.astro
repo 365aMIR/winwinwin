@@ -8,14 +8,26 @@ interface Props {
 }
 
 const { title, tempo, mp3Url, isFirst, index } = Astro.props;
+
+// Four mascots dealt out in deck order and cycling: card 1 gets br 1, card 5
+// gets br 1 again. Keyed to the track's own index, so a card keeps its dog as
+// the deck rotates. Each one brings the progress bar colour it rides on.
+const MASCOTS = [
+  { file: 'br 1.png', bar: '#FF15A1' },
+  { file: 'br 2.png', bar: '#FFFEFF' },
+  { file: 'br 3.png', bar: '#4537CC' },
+  { file: 'br 4.png', bar: '#fdda2b' },
+];
+const mascot = MASCOTS[index % MASCOTS.length];
+const mascotUrl = encodeURI(`/img/${mascot.file}`);
 ---
 
-<div class="radio-card" data-index={index}>
+<div class="radio-card" data-index={index} data-playing={isFirst ? '' : undefined}>
   <div class="radio-card-tophalf">
     <img
-      src="/img/loudspeaker_rays-1.png"
-      width="32"
-      height="32"
+      src="/img/loudspeaker_rays-1_256.png"
+      width="48"
+      height="48"
       alt="volume"
       class="radio-card-tophalf-volume"
       style={isFirst ? '' : 'display: none'}
@@ -30,13 +42,13 @@ const { title, tempo, mp3Url, isFirst, index } = Astro.props;
 
     <audio class="audio-element" src={mp3Url} preload="none" data-index={index}></audio>
     <div class="progress-container">
-      <div class="progress-bar"></div>
+      <div class="progress-bar" style={`--mascot: url("${mascotUrl}"); --bar: ${mascot.bar}`}></div>
     </div>
   </div>
 
   <div class="radio-card-bottomhalf">
     <div class="radio-card-bottomhalf-disc" style={isFirst ? '' : 'display: none'}>
-      <img src="/img/cd_audio_cd-0.png" width="56" height="56" alt="cd" />
+      <img src="/img/cd_audio_cd-0_256.png" width="56" height="56" alt="cd" />
     </div>
     <div class="radio-card-bottomhalf-info">
       <p class="radio-card-bottomhalf-info-col">
@@ -66,7 +78,7 @@ const { title, tempo, mp3Url, isFirst, index } = Astro.props;
 
   .radio-card-tophalf {
     position: relative;
-    height: 132px;
+    height: 150px;
     padding: 10px 8px;
   }
 
@@ -103,7 +115,7 @@ const { title, tempo, mp3Url, isFirst, index } = Astro.props;
   .radio-card-tophalf-queue {
     position: absolute;
     inset: 0;
-    transform: translateY(30%);
+    transform: translateY(50%);
     font-family: "Tiny5", sans-serif;
     font-size: 18px;
     text-align: center;
@@ -113,6 +125,8 @@ const { title, tempo, mp3Url, isFirst, index } = Astro.props;
 
   .audio-element { display: none; }
 
+  /* Visible overflow, not hidden: the mascot rides the end of the bar and
+     stands taller than the 5px track it is riding on. */
   .progress-container {
     position: absolute;
     left: 2.5%;
@@ -120,15 +134,39 @@ const { title, tempo, mp3Url, isFirst, index } = Astro.props;
     bottom: -8px;
     height: 5px;
     background: #00FF2F;
-    overflow: hidden;
+    overflow: visible;
     z-index: 5;
   }
+  /* Starts 39px in, which parks the mascot behind the CD at zero progress, and
+     runs to 74% — the JS scales to that, so the far end still lands inside the
+     card once the mascot's overhang is counted. */
   .progress-bar {
-    height: 100%;
+    position: relative;
+    left: 39px;
+    height: 95%;
     width: 0%;
-    background: #FAFF00;
+    background: var(--bar, #FAFF00);
     transition: width 0.1s;
   }
+  /* Straddles the leading edge — half its width hangs past the bar — so it
+     reads as the head of the progress rather than a marker behind it. */
+  .progress-bar::after {
+    content: '';
+    position: absolute;
+    right: -19px;
+    top: 50%;
+    width: 28px;
+    height: 28px;
+    transform: translateY(-50%);
+    background-image: var(--mascot);
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    image-rendering: pixelated;
+  }
+  /* Only the card that is actually playing wears one, like the disc and the
+     speaker above it. */
+  .radio-card:not([data-playing]) .progress-bar::after { display: none; }
 
   .radio-card-bottomhalf {
     position: relative;
@@ -162,7 +200,7 @@ const { title, tempo, mp3Url, isFirst, index } = Astro.props;
     justify-content: space-between;
     -moz-column-gap: 10px;
          column-gap: 10px;
-    margin-top: 30px;
+    margin-top: 20px;
   }
   .radio-card-bottomhalf-info-col {
     display: flex;

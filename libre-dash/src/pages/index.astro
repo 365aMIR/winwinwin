@@ -2,6 +2,7 @@
 import Desktop from '../layouts/Desktop.astro';
 import Window from '../components/Window.astro';
 import Radio from '../components/Radio.astro';
+import Sticker from '../components/Sticker.astro';
 import { getSnapshot, type Snapshot } from '../lib/libre';
 import { getBeats } from '../lib/beats';
 
@@ -19,37 +20,59 @@ const decimals = data?.units === 'mmol/L' ? 1 : 0;
 const radioCards = getBeats();
 ---
 
-<Desktop title={data ? `amir: ${data.current.value.toFixed(decimals)} ${data.units}` : 'LibreLinkUp'}>
-  <Window id="glucose" title="glucose" width={380}>
-    {error ? (
-      <section class="glucose glucose--error">
-        <h1 class="glucose-error-title">Can't reach LibreLinkUp</h1>
-        <p class="glucose-error-body">{error}</p>
-      </section>
-    ) : (
-      <section class="glucose" data-state="ok">
-        <p class="glucose-who">amir dessouky</p>
+<Desktop title="southside/dinero">
+  <Sticker id="ssd" />
+
+  {error ? (
+    <section class="glucose glucose--error" slot="taskbar">
+      <p class="glucose-error">can't reach librelinkup — {error}</p>
+    </section>
+  ) : (
+    <section
+      class="glucose glucose--bar glucose-open"
+      slot="taskbar"
+      data-state="ok"
+      role="button"
+      tabindex="0"
+      aria-controls="glucose"
+      title="glucose"
+    >
+      <!-- The whole strip is the way in and out of the window it replaced. -->
+      <div class="glucose-graph">
+        <svg class="glucose-chart" viewBox="0 0 320 100" preserveAspectRatio="none" aria-label="Recent readings"></svg>
+      </div>
+
+      <p class="glucose-trend">{data!.current.trend}</p>
+
+      <p class="glucose-read-value">{data!.current.value.toFixed(decimals)}</p>
+    </section>
+  )}
+
+  {!error && (
+    <Window id="glucose" title="glucose" width={380} open={false} dock={false}>
+      <section class="glucose glucose--panel" data-state="ok">
+        {/* <p class="glucose-who"></p> */}
 
         <div class="glucose-read">
-          <p class="glucose-read-value" id="value">{data!.current.value.toFixed(decimals)}</p>
+          <p class="glucose-read-value">{data!.current.value.toFixed(decimals)}</p>
           <p class="glucose-read-units">{data!.units}</p>
         </div>
 
         <div class="glucose-meta">
-          <p class="glucose-meta-trend" id="trend">{data!.current.trend}</p>
-          <p class="glucose-meta-ago"><time id="ts" datetime={data!.current.timestamp}>just now</time></p>
+          <p class="glucose-trend">{data!.current.trend}</p>
+          <p class="glucose-ago"><time class="glucose-ts" datetime={data!.current.timestamp}>just now</time></p>
         </div>
 
         <div class="glucose-graph">
-          <svg id="chart" viewBox="0 0 320 100" preserveAspectRatio="none" aria-label="Recent readings"></svg>
+          <svg class="glucose-chart" viewBox="0 0 320 100" preserveAspectRatio="none" aria-label="Recent readings"></svg>
         </div>
 
         <p class="glucose-range">
           target {data!.target.low.toFixed(decimals)}–{data!.target.high.toFixed(decimals)} {data!.units}
         </p>
       </section>
-    )}
-  </Window>
+    </Window>
+  )}
 
   <Window id="radio" title="radio" width={420}>
     <Radio radioCards={radioCards} />
@@ -57,21 +80,56 @@ const radioCards = getBeats();
 
   <script is:inline define:vars={{ initial: data }}>
     if (initial) {
-      const card = document.querySelector('.glucose');
       const decimals = initial.units === 'mmol/L' ? 1 : 0;
 
+      // The reading is on screen twice — the taskbar strip and the window it
+      // opens — so everything is addressed by class and painted in both.
       const paint = (snap) => {
         const c = snap.current;
-        document.getElementById('value').textContent = c.value.toFixed(decimals);
-        document.getElementById('trend').textContent = c.trend;
-        const ts = document.getElementById('ts');
-        ts.dateTime = c.timestamp;
-        card.dataset.state = c.isLow ? 'low' : c.isHigh ? 'high' : 'ok';
-        drawChart(snap);
+        const state = c.isLow ? 'low' : c.isHigh ? 'high' : 'ok';
+        document.querySelectorAll('.glucose').forEach((el) => {
+          el.dataset.state = state;
+          el.querySelectorAll('.glucose-read-value').forEach((n) => {
+            n.textContent = c.value.toFixed(decimals);
+          });
+          el.querySelectorAll('.glucose-trend').forEach((n) => {
+            n.textContent = c.trend;
+          });
+          el.querySelectorAll('.glucose-ts').forEach((n) => {
+            n.dateTime = c.timestamp;
+          });
+          el.querySelectorAll('.glucose-chart').forEach((n) => drawChart(n, snap));
+        });
         tick();
       };
 
-      const drawChart = (snap) => {
+      // Relative "x min ago", refreshed every 10s. Only the window shows one.
+      const tick = () => {
+        document.querySelectorAll('.glucose-ts').forEach((ts) => {
+          const mins = Math.round((Date.now() - new Date(ts.dateTime)) / 60000);
+          ts.textContent = mins < 1 ? 'just now' : mins === 1 ? '1 min ago' : `${mins} min ago`;
+        });
+      };
+
+      // The strip in the bar is the window's only control, standing in for the
+      // taskbar button it opted out of: open, raise, close.
+      const wireOpeners = () => {
+        document.querySelectorAll('.glucose-open').forEach((el) => {
+          const toggle = () =>
+            document.dispatchEvent(
+              new CustomEvent('win:toggle', { detail: { id: 'glucose' } })
+            );
+          el.addEventListener('click', toggle);
+          // role="button" buys the semantics but none of the keyboard behaviour.
+          el.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            toggle();
+          });
+        });
+      };
+
+      const drawChart = (chart, snap) => {
         const pts = snap.history.concat([snap.current]);
         if (pts.length < 2) return;
         const vals = pts.map((p) => p.value);
@@ -81,18 +139,11 @@ const radioCards = getBeats();
         const y = (v) => 100 - ((v - lo) / (hi - lo)) * 100;
         const d = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
         const band = { y: y(snap.target.high), h: y(snap.target.low) - y(snap.target.high) };
-        // Injected markup carries no scope attribute, so the band is coloured
-        // here rather than from the stylesheet.
-        document.getElementById('chart').innerHTML =
-          `<rect x="0" y="${band.y.toFixed(1)}" width="320" height="${band.h.toFixed(1)}" fill="#ffad0030"/>` +
-          `<path d="${d}" fill="none" stroke="currentColor" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
-      };
-
-      // Relative "x min ago", refreshed every 10s.
-      const tick = () => {
-        const ts = document.getElementById('ts');
-        const mins = Math.round((Date.now() - new Date(ts.dateTime)) / 60000);
-        ts.textContent = mins < 1 ? 'just now' : mins === 1 ? '1 min ago' : `${mins} min ago`;
+        // Band and trace are coloured from the stylesheet, which reaches this
+        // injected markup through :global().
+        chart.innerHTML =
+          `<rect x="0" y="${band.y.toFixed(1)}" width="320" height="${band.h.toFixed(1)}"/>` +
+          `<path d="${d}" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
       };
 
       const refresh = async () => {
@@ -102,46 +153,131 @@ const radioCards = getBeats();
         } catch {}
       };
 
-      paint(initial);
-      setInterval(tick, 10_000);
-      // Libre pushes a new reading each minute; poll a little slower than that.
-      setInterval(refresh, 60_000);
-      document.addEventListener('visibilitychange', () => !document.hidden && refresh());
+      // This script sits in the desktop, but the taskbar strip is rendered into
+      // the footer below it — so nothing in the bar exists yet. Wait for the
+      // parse to finish before reaching for either copy of the reading.
+      const start = () => {
+        wireOpeners();
+        paint(initial);
+        setInterval(tick, 10_000);
+        // Libre pushes a new reading each minute; poll a little slower.
+        setInterval(refresh, 60_000);
+        document.addEventListener('visibilitychange', () => !document.hidden && refresh());
+      };
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start);
+      } else {
+        start();
+      }
     }
   </script>
 </Desktop>
 
 <style>
-  /* The window frame supplies the border and the sizing now; this is just the
-     readout inside it. */
-  .glucose {
+  /* The same reading in two sizes: a strip in the taskbar, and the window it
+     opens. Everything shared lives here; the two blocks below only resize. */
+  .glucose { color: #000300; }
+
+  .glucose-graph {
+    background-color: #FFFEFF;
+    border: 2px solid #000300;
+  }
+  .glucose-chart {
+    display: block;
+    width: 100%;
+    overflow: visible;
+  }
+  /* Trace and target band are injected, so they carry no scope attribute. */
+  .glucose-chart :global(path) { stroke-width: 3; }
+  .glucose-chart :global(rect) { fill: #FFAD0030; }
+
+  /* Reads as one of the sizer buttons, minus the affordance — it is a
+     readout, so no pointer, no hover. */
+  .glucose-trend {
+    font-family: "Tiny5", sans-serif;
+    background-color: #BDBDBD;
+    border-right: 2px solid #000300;
+    border-left: 2px solid #000300;
+    border-top: none;
     color: #000300;
+    margin: 0;
+    white-space: nowrap;
   }
 
-  .glucose-who {
+  .glucose-read-value {
+    margin: 0;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: currentColor;
+  }
+
+  /* ---------- In the taskbar ---------- *
+     One horizontal strip, and everything in it has to clear 40px. */
+  .glucose--bar {
+    display: flex;
+    align-items: center;
+    -moz-column-gap: 8px;
+         column-gap: 8px;
+    /* Shrink-wrapped, so space-between keeps it against the right edge. */
+    flex: 0 1 auto;
+    min-width: 0;
+    cursor: crosshair;
+    -webkit-user-select: none;
+       -moz-user-select: none;
+            user-select: none;
+  }
+  /* The only part that gives when the bar runs out of room. No frame and no
+     panel — the trace sits straight on the bar at this size. */
+  .glucose--bar .glucose-graph {
+    flex: 0 1 200px;
+    min-width: 0;
+    padding: 1px;
+    border: none;
+    background: none;
+  }
+  .glucose--bar .glucose-chart { height: 24px; }
+  /* A hairline at bar size; the window keeps the heavier trace. The band is
+     just a shade of the bar itself — the orange it is drawn in elsewhere does
+     not read against the grey. */
+  .glucose--bar .glucose-chart :global(path) { stroke-width: 1; }
+  .glucose--bar .glucose-chart :global(rect) { fill: #00000014; }
+  .glucose--bar .glucose-trend {
+    flex: none;
+    font-size: 14px;
+    line-height: 1.2;
+    border-bottom-width: 4px;
+    border-bottom-style: solid;
+    border-bottom-color: #000300;
+    padding: 0 5px;
+  }
+  .glucose--bar .glucose-read-value {
+    flex: none;
+    font-family: "Tiny5", sans-serif;
+    font-size: 26px;
+  }
+  /* The whole strip is the control, so hovering anywhere on it answers —
+     the trace goes with the number, the frame having gone. */
+  .glucose--bar:hover { color: #F80000; }
+
+  /* ---------- In the window ---------- */
+  .glucose--panel .glucose-who {
     font-family: "Geostar Fill", sans-serif;
     font-size: 28px;
     text-transform: lowercase;
-    color: #000300;
     margin: 0 0 4px;
-    width: 100%;
   }
-
   .glucose-read {
     display: flex;
     align-items: baseline;
     -moz-column-gap: 8px;
          column-gap: 8px;
   }
-  .glucose-read-value {
+  .glucose--panel .glucose-read-value {
     font-family: "Geostar Fill", sans-serif;
     font-size: 72px;
     font-weight: 600;
     -webkit-text-stroke: 0.2px;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-    margin: 0;
-    color: currentColor;
   }
   .glucose-read-units {
     font-family: "Tiny5", sans-serif;
@@ -149,51 +285,31 @@ const radioCards = getBeats();
     margin: 0;
     color: #000300;
   }
-
   .glucose-meta {
     display: flex;
-    flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
     -moz-column-gap: 8px;
          column-gap: 8px;
     margin-top: 26px;
   }
-  /* Reads as one of the sizer buttons, minus the affordance — it is a
-     readout, so no pointer, no hover. */
-  .glucose-meta-trend {
-    font-family: "Tiny5", sans-serif;
+  .glucose--panel .glucose-trend {
     font-size: 18px;
-    background-color: #BDBDBD;
     border-bottom: 6px solid #000300;
-    border-right: 2px solid #000300;
-    border-left: 2px solid #000300;
-    border-top: none;
-    color: #000300;
     padding: 0 6px;
-    margin: 0;
     cursor: default;
   }
-  .glucose-meta-ago {
+  .glucose-ago {
     font-family: "Taviraj", serif;
     font-size: 14px;
     font-style: italic;
     margin: 0;
   }
-
-  .glucose-graph {
+  .glucose--panel .glucose-graph {
     margin-top: 22px;
-    background-color: #FFFEFF;
-    border: 2px solid #000300;
     padding: 6px;
   }
-  #chart {
-    display: block;
-    width: 100%;
-    height: 88px;
-    overflow: visible;
-  }
-
+  .glucose--panel .glucose-chart { height: 88px; }
   .glucose-range {
     font-family: "Tiny5", sans-serif;
     font-size: 14px;
@@ -202,34 +318,35 @@ const radioCards = getBeats();
     color: #000300;
   }
 
+
   /* In range reads calm and black; out of range takes the red, with a low
      inverted so it cannot be mistaken for a high at a glance. */
   .glucose[data-state='ok'] { color: #000300; }
-  .glucose[data-state='ok'] .glucose-meta-trend {
+  .glucose[data-state='ok'] .glucose-trend {
     background-color: #00FF2F;
   }
   .glucose[data-state='high'] { color: #F80000; }
-  .glucose[data-state='high'] .glucose-meta-trend {
+  .glucose[data-state='high'] .glucose-trend {
     background-color: #F80000;
     color: #FFFEFF;
   }
   .glucose[data-state='low'] { color: #F80000; }
-  .glucose[data-state='low'] .glucose-meta-trend {
+  .glucose[data-state='low'] .glucose-trend {
     background-color: #000300;
     color: #F80000;
   }
 
-  .glucose--error { color: #000300; }
-  .glucose-error-title {
-    font-family: "Ojuju", sans-serif;
-    font-size: 28px;
-    margin: 0 0 8px;
-    line-height: 1.1;
-  }
-  .glucose-error-body {
-    font-family: "Taviraj", serif;
+  .glucose-error {
+    font-family: "Tiny5", sans-serif;
     font-size: 15px;
     margin: 0;
-    word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* On a phone the bar has room for the number and little else. */
+  @media screen and (max-width: 576px) {
+    .glucose--bar .glucose-graph { display: none; }
   }
 </style>

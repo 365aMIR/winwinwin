@@ -20,7 +20,9 @@ const { title } = Astro.props;
 
     <footer class="taskbar">
       <div class="taskbar-apps" id="dock"></div>
-      <p class="taskbar-clock" id="clock"></p>
+      <!-- Where the clock used to sit: readouts that live in the bar itself
+           rather than in a window. -->
+      <slot name="taskbar" />
     </footer>
 
     <script is:inline>
@@ -43,7 +45,11 @@ const { title } = Astro.props;
         windows.forEach((win, i) => {
           const id = win.dataset.winId;
           const state = (saved[id] = saved[id] || {});
-          if (state.open === undefined) state.open = true;
+          // open={false} means closed on every load, not just the first: a
+          // window opened on demand from elsewhere should not come back by
+          // itself. Otherwise the last state the user left it in wins.
+          if (win.dataset.open === 'false') state.open = false;
+          else if (state.open === undefined) state.open = true;
 
           // --- geometry -------------------------------------------------
           // Keep windows reachable: a stored position from a wider screen must
@@ -66,29 +72,43 @@ const { title } = Astro.props;
           const setOpen = (open) => {
             state.open = open;
             win.hidden = !open;
-            btn.dataset.active = String(open);
+            if (btn) btn.dataset.active = String(open);
             if (open) focus();
             save();
           };
 
-          // --- taskbar button -------------------------------------------
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'taskbar-app';
-          btn.textContent = win.dataset.winTitle;
-          // Closed windows stay pinned here, so nothing is ever lost for good.
-          btn.addEventListener('click', () => {
+          // One press: raise it if it is buried, put it away if it is already
+          // in front, bring it back if it is closed.
+          const cycle = () => {
             if (!state.open) return setOpen(true);
             if (win.dataset.focused === undefined) return focus();
             setOpen(false);
+          };
+
+          // --- taskbar button -------------------------------------------
+          // Closed windows stay pinned here, so nothing is ever lost for good —
+          // unless the window opted out, in which case whatever opens it lives
+          // somewhere else on the page.
+          const btn = win.dataset.dock === 'false' ? null : document.createElement('button');
+          if (btn) {
+            btn.type = 'button';
+            btn.className = 'taskbar-app';
+            btn.textContent = win.dataset.winTitle;
+            btn.addEventListener('click', cycle);
+            dock.appendChild(btn);
+          }
+
+          // Anything on the page can ask for a window by name and drive it the
+          // way a taskbar button would — the only route in for undocked ones.
+          document.addEventListener('win:toggle', (e) => {
+            if (e.detail && e.detail.id === id) cycle();
           });
-          dock.appendChild(btn);
 
           // --- restore ---------------------------------------------------
           if (state.w) win.style.width = Math.min(state.w, desktop.clientWidth) + 'px';
           if (state.h) win.style.height = Math.min(state.h, desktop.clientHeight) + 'px';
           win.hidden = !state.open;
-          btn.dataset.active = String(state.open);
+          if (btn) btn.dataset.active = String(state.open);
 
           // Measuring needs the window laid out, so place after unhiding.
           const startX = state.x ?? Number(win.dataset.x ?? NaN);
@@ -171,12 +191,6 @@ const { title } = Astro.props;
           });
         });
 
-        const clock = document.getElementById('clock');
-        const tickClock = () => {
-          clock.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        };
-        tickClock();
-        setInterval(tickClock, 15_000);
       })();
     </script>
 
@@ -185,6 +199,10 @@ const { title } = Astro.props;
       @import url("https://fonts.googleapis.com/css2?family=Tiny5&display=swap");
       @import url("https://fonts.googleapis.com/css2?family=Ojuju:wght@200..800&display=swap");
       @import url("https://fonts.googleapis.com/css2?family=Geostar+Fill&display=swap");
+
+      /* One number for the bar's height: the desktop is whatever is left over,
+         so anything anchored to its bottom edge follows the bar. */
+      :root { --taskbar-h: 40px; }
 
       * { box-sizing: border-box; }
 
@@ -214,7 +232,7 @@ const { title } = Astro.props;
       /* Everything above the taskbar is window territory. */
       .desktop {
         position: relative;
-        height: calc(100dvh - 40px);
+        height: calc(100dvh - var(--taskbar-h));
         overflow: hidden;
       }
 
@@ -223,7 +241,7 @@ const { title } = Astro.props;
         left: 0;
         right: 0;
         bottom: 0;
-        height: 40px;
+        height: var(--taskbar-h);
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -257,12 +275,6 @@ const { title } = Astro.props;
       .taskbar-app[data-active='true'] {
         background-color: #000300;
         color: #FFFEFF;
-      }
-      .taskbar-clock {
-        font-family: "Tiny5", sans-serif;
-        font-size: 16px;
-        margin: 0;
-        flex: none;
       }
     </style>
   </body>

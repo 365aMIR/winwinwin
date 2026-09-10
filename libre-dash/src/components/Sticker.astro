@@ -1,0 +1,144 @@
+---
+interface Props {
+  /** Stable key — position and the chosen colourway persist under it. */
+  id: string;
+  /** Starting position, from the top-left of the desktop. */
+  x?: number;
+  y?: number;
+  width?: number;
+}
+
+const { id, x = 28, y = 24, width = 340 } = Astro.props;
+
+// The nine colourways, clicked through in order.
+const frames = Array.from(
+  { length: 9 },
+  (_, i) => encodeURI(`/img/ssdssd outline white (${i + 1}).png`)
+);
+---
+
+<div
+  class="sticker"
+  data-sticker-id={id}
+  data-x={x}
+  data-y={y}
+  style={`--sticker-w:${width}px`}
+  title="southsidedinero — click to recolour, drag to move"
+>
+  <img class="sticker-art" src={frames[0]} alt="southsidedinero" draggable="false" />
+</div>
+
+<script is:inline define:vars={{ id, frames }}>
+  (() => {
+    const el = document.querySelector(`[data-sticker-id="${id}"]`);
+    const art = el.querySelector('.sticker-art');
+    const desktop = document.getElementById('desktop');
+    const KEY = 'libre-dash:sticker:' + id;
+
+    let state = {};
+    try {
+      state = JSON.parse(localStorage.getItem(KEY) || '{}');
+    } catch {}
+    const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+    // Same rule as the windows: a position stored on a wider screen must not
+    // strand the sticker off the edge.
+    const place = (px, py) => {
+      state.x = clamp(px, 0, Math.max(0, desktop.clientWidth - el.offsetWidth));
+      state.y = clamp(py, 0, Math.max(0, desktop.clientHeight - el.offsetHeight));
+      el.style.left = state.x + 'px';
+      el.style.top = state.y + 'px';
+    };
+
+    const paint = () => {
+      art.src = frames[state.i];
+    };
+
+    state.i = Number.isInteger(state.i) ? ((state.i % frames.length) + frames.length) % frames.length : 0;
+    paint();
+    place(state.x ?? Number(el.dataset.x), state.y ?? Number(el.dataset.y));
+    save();
+
+    // A click cycles, a drag moves — told apart by how far the pointer travelled,
+    // so a shaky click still recolours rather than doing nothing.
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      el.setPointerCapture(e.pointerId);
+      const rect = el.getBoundingClientRect();
+      const box = desktop.getBoundingClientRect();
+      const offX = e.clientX - rect.left;
+      const offY = e.clientY - rect.top;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let moved = false;
+
+      const move = (ev) => {
+        if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+        moved = true;
+        el.dataset.dragging = '';
+        place(ev.clientX - box.left - offX, ev.clientY - box.top - offY);
+      };
+      const up = () => {
+        delete el.dataset.dragging;
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', up);
+        if (!moved) {
+          state.i = (state.i + 1) % frames.length;
+          paint();
+        }
+        save();
+      };
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+    });
+
+    // Warm the rest of the set so a click swaps instantly rather than flashing,
+    // but not before the page itself has finished loading.
+    const preload = () => frames.forEach((src) => (new Image().src = src));
+    if (document.readyState === 'complete') preload();
+    else addEventListener('load', preload);
+
+    addEventListener('resize', () => place(state.x, state.y));
+  })();
+</script>
+
+<style>
+  /* Loose on the desktop — no frame, no taskbar button, and above the windows
+     so it stays reachable wherever they are stacked. */
+  .sticker {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 900;
+    width: var(--sticker-w);
+    max-width: 80vw;
+    /* The art is a 1152² square that is mostly empty; crop to the wordmark so
+       the drag target is the lettering and not a large invisible box. */
+    aspect-ratio: 1146 / 575;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    -webkit-user-select: none;
+       -moz-user-select: none;
+            user-select: none;
+    /* Keeps the outline-only colourway legible over the checkerboard. */
+    filter: drop-shadow(2px 2px 0 #FFFEFF);
+  }
+  .sticker[data-dragging] { cursor: grabbing; }
+
+  .sticker-art {
+    position: absolute;
+    left: -0.26%;
+    /* Vertical percentages resolve against the crop box, hence the second
+       factor: 254/1152 of the art's width, expressed as a share of that box. */
+    top: -44.16%;
+    width: 100.52%;
+    display: block;
+    -webkit-user-drag: none;
+    pointer-events: none;
+  }
+</style>
