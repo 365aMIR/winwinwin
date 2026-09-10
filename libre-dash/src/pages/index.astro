@@ -23,6 +23,22 @@ const radioCards = getBeats();
 <Desktop title="southside/dinero">
   <Sticker id="ssd" />
 
+  <Sticker
+    id="outlet"
+    frames={['/img/southsideoutlet.png']}
+    label="southsidedinero outlet"
+    x={400}
+    y={16}
+    width={200}
+    mobileWidth={100}
+    aspect="1 / 1"
+    artLeft="0"
+    artTop="0"
+    artWidth="100%"
+    shadow={false}
+    onTop={false}
+  />
+
   {error ? (
     <section class="glucose glucose--error" slot="taskbar">
       <p class="glucose-error">can't reach librelinkup — {error}</p>

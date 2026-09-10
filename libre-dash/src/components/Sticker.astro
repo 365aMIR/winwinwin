@@ -6,15 +6,53 @@ interface Props {
   x?: number;
   y?: number;
   width?: number;
+  /** Width on a phone. Defaults to the same as everywhere else. */
+  mobileWidth?: number;
+  /** Images cycled through on click. One frame just means nothing to cycle. */
+  frames?: string[];
+  label?: string;
+  /**
+   * A crop window over the art, so a drag target is the picture and not the
+   * transparent box around it. The defaults trim the padding off the ssdssd
+   * wordmark; art that already fills its own box wants a matching aspect with
+   * the offsets left at zero.
+   */
+  aspect?: string;
+  artLeft?: string;
+  artTop?: string;
+  artWidth?: string;
+  /** Set false for art with its own edges — the shadow reads as a border. */
+  shadow?: boolean;
+  /**
+   * Whether it floats over the windows. Off puts it in the ordinary stacking
+   * order, so anything with a z-index — every window — covers it.
+   */
+  onTop?: boolean;
 }
 
-const { id, x = 28, y = 24, width = 340 } = Astro.props;
-
 // The nine colourways, clicked through in order.
-const frames = Array.from(
+const SSDSSD = Array.from(
   { length: 9 },
   (_, i) => encodeURI(`/img/ssdssd outline white (${i + 1}).png`)
 );
+
+const {
+  id,
+  x = 28,
+  y = 24,
+  width = 340,
+  mobileWidth = width,
+  frames = SSDSSD,
+  label = 'southsidedinero',
+  aspect = '1146 / 575',
+  artLeft = '-0.26%',
+  artTop = '-44.16%',
+  artWidth = '100.52%',
+  shadow = true,
+  onTop = true,
+} = Astro.props;
+
+const title = `${label} — ${frames.length > 1 ? 'click to recolour, drag to move' : 'drag to move'}`;
 ---
 
 <div
@@ -22,10 +60,10 @@ const frames = Array.from(
   data-sticker-id={id}
   data-x={x}
   data-y={y}
-  style={`--sticker-w:${width}px`}
-  title="southsidedinero — click to recolour, drag to move"
+  style={`--sticker-w:${width}px; --sticker-w-sm:${mobileWidth}px; --sticker-z:${onTop ? 900 : 'auto'}; --art-aspect:${aspect}; --art-left:${artLeft}; --art-top:${artTop}; --art-width:${artWidth}; --art-filter:${shadow ? 'drop-shadow(2px 2px 0 #FFFEFF)' : 'none'}`}
+  title={title}
 >
-  <img class="sticker-art" src={frames[0]} alt="southsidedinero" draggable="false" />
+  <img class="sticker-art" src={frames[0]} alt={label} draggable="false" />
 </div>
 
 <script is:inline define:vars={{ id, frames }}>
@@ -107,18 +145,19 @@ const frames = Array.from(
 </script>
 
 <style>
-  /* Loose on the desktop — no frame, no taskbar button, and above the windows
-     so it stays reachable wherever they are stacked. */
+  /* Loose on the desktop — no frame, no taskbar button, and by default above
+     the windows so it stays reachable wherever they are stacked. */
   .sticker {
     position: absolute;
     top: 0;
     left: 0;
-    z-index: 900;
+    z-index: var(--sticker-z);
     width: var(--sticker-w);
     max-width: 80vw;
-    /* The art is a 1152² square that is mostly empty; crop to the wordmark so
-       the drag target is the lettering and not a large invisible box. */
-    aspect-ratio: 1146 / 575;
+    /* The crop window, set per sticker. For the ssdssd wordmark it trims a
+       mostly-empty 1152² square down to the lettering, so the drag target is
+       the picture and not a large invisible box. */
+    aspect-ratio: var(--art-aspect);
     overflow: hidden;
     cursor: grab;
     touch-action: none;
@@ -126,19 +165,23 @@ const frames = Array.from(
        -moz-user-select: none;
             user-select: none;
     /* Keeps the outline-only colourway legible over the checkerboard. */
-    filter: drop-shadow(2px 2px 0 #FFFEFF);
+    filter: var(--art-filter);
   }
   .sticker[data-dragging] { cursor: grabbing; }
 
   .sticker-art {
     position: absolute;
-    left: -0.26%;
-    /* Vertical percentages resolve against the crop box, hence the second
-       factor: 254/1152 of the art's width, expressed as a share of that box. */
-    top: -44.16%;
-    width: 100.52%;
+    left: var(--art-left);
+    /* Vertical percentages resolve against the crop box, so the ssdssd offset
+       is 254/1152 of the art's width expressed as a share of that box. */
+    top: var(--art-top);
+    width: var(--art-width);
     display: block;
     -webkit-user-drag: none;
     pointer-events: none;
+  }
+
+  @media screen and (max-width: 576px) {
+    .sticker { width: var(--sticker-w-sm); }
   }
 </style>
