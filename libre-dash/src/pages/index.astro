@@ -17,6 +17,14 @@ try {
 }
 
 const decimals = data?.units === 'mmol/L' ? 1 : 0;
+
+// Turn back on to give the reading its window again, opened by pressing the
+// taskbar strip. Off, the strip is a plain readout with nothing behind it.
+const GLUCOSE_WINDOW = false;
+
+// Being throttled is a wait, not a fault, and the message is far too long for
+// a 40px bar. Say nothing and let the reading come back on its own.
+const throttled = !!error && /rate-limited/i.test(error);
 const radioCards = getBeats();
 ---
 
@@ -40,20 +48,22 @@ const radioCards = getBeats();
   />
 
   {error ? (
-    <section class="glucose glucose--error" slot="taskbar">
-      <p class="glucose-error">can't reach librelinkup — {error}</p>
-    </section>
+    throttled ? null : (
+      <section class="glucose glucose--error" slot="taskbar">
+        <p class="glucose-error">can't reach librelinkup — {error}</p>
+      </section>
+    )
   ) : (
     <section
-      class="glucose glucose--bar glucose-open"
+      class:list={['glucose', 'glucose--bar', GLUCOSE_WINDOW && 'glucose-open']}
       slot="taskbar"
       data-state="ok"
-      role="button"
-      tabindex="0"
-      aria-controls="glucose"
-      title="glucose"
+      role={GLUCOSE_WINDOW ? 'button' : undefined}
+      tabindex={GLUCOSE_WINDOW ? 0 : undefined}
+      aria-controls={GLUCOSE_WINDOW ? 'glucose' : undefined}
+      title={GLUCOSE_WINDOW ? 'glucose' : undefined}
     >
-      <!-- The whole strip is the way in and out of the window it replaced. -->
+      <!-- With the window on, the whole strip is the way in and out of it. -->
       <div class="glucose-graph">
         <svg class="glucose-chart" viewBox="0 0 320 100" preserveAspectRatio="none" aria-label="Recent readings"></svg>
       </div>
@@ -64,7 +74,7 @@ const radioCards = getBeats();
     </section>
   )}
 
-  {!error && (
+  {!error && GLUCOSE_WINDOW && (
     <Window id="glucose" title="glucose" width={380} open={false} dock={false}>
       <section class="glucose glucose--panel" data-state="ok">
         {/* <p class="glucose-who"></p> */}
@@ -238,7 +248,6 @@ const radioCards = getBeats();
     /* Shrink-wrapped, so space-between keeps it against the right edge. */
     flex: 0 1 auto;
     min-width: 0;
-    cursor: crosshair;
     -webkit-user-select: none;
        -moz-user-select: none;
             user-select: none;
@@ -272,9 +281,10 @@ const radioCards = getBeats();
     font-family: "Tiny5", sans-serif;
     font-size: 26px;
   }
-  /* The whole strip is the control, so hovering anywhere on it answers —
-     the trace goes with the number, the frame having gone. */
-  .glucose--bar:hover { color: #F80000; }
+  /* Only a control when there is a window behind it: then the whole strip
+     answers the pointer, trace and number together. */
+  .glucose--bar.glucose-open { cursor: crosshair; }
+  .glucose--bar.glucose-open:hover { color: #F80000; }
 
   /* ---------- In the window ---------- */
   .glucose--panel .glucose-who {
